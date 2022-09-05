@@ -1,5 +1,5 @@
 """Split-Mix Federated Learning"""
-import sys, os, argparse, copy, time
+import sys, os, argparse, copy, time, json
 import numpy as np
 import wandb
 from tqdm import tqdm
@@ -206,7 +206,8 @@ if __name__ == '__main__':
 
     # set experiment files, wandb
     exp_folder = f'SplitMix_{args.data}'
-    run_name, SAVE_FILE = render_run_name(args, exp_folder)
+    run_name, save_dir = render_run_name(args, exp_folder)
+    if not os.path.isdir(save_dir): os.makedirs(save_dir)
     # wandb.init(group=run_name[:120], project=exp_folder, mode='offline' if args.no_log else 'online',
     #            config={**vars(args), 'save_file': SAVE_FILE})
 
@@ -380,6 +381,7 @@ if __name__ == '__main__':
         lr_sch = None
     shift_tr_cnt_mt = [0 for _ in range(fed.num_base)]  # count of trained times for each base model
     best_val_acc, best_test_acc = 0, 0
+    log = {'test_accs':[], 'val_accs':[]}
     for a_iter in range(start_epoch, args.iters):
         # set global lr
         global_lr = args.lr if lr_sch is None else lr_sch.step()
@@ -449,6 +451,7 @@ if __name__ == '__main__':
         else:
             val_loss, val_acc = test(val_mix_model, val_loader, loss_fun, device,
                                     adversary=adversary)
+        log['val_accs'].append(val_acc)
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             if running_model.bn_type.startswith('d'):
@@ -457,10 +460,14 @@ if __name__ == '__main__':
             else:
                 _, best_test_acc = test(val_mix_model, test_loader, loss_fun, device,
                                         adversary=adversary)
+            torch.save(val_mix_model, os.path.join(save_dir, 'model.pt'))
+        log['test_accs'].append(best_test_acc)
+
         print(val_loss, val_acc, best_test_acc)
         elapsed = time.process_time() - start_time
         print('train_elapsed', elapsed)
-
+    with open(os.path.join(save_dir, 'log.json'), 'w') as f:
+        json.dump(log, f)
         # ----------- Validation ---------------
         # val_acc_list, val_loss = fed_test(
         #     fed, running_model, args.verbose, val_mix_model=val_mix_model, adversary=None)
