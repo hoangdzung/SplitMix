@@ -59,7 +59,8 @@ class _Federation:
 
         dataset = fetch_dataset(data)
         num_classes = medmnist_class.medmnist_n_classes[data]
-        train_loaders, val_loader, test_loader = split_dataset(dataset, args.pd_nuser, args.partition_mode, args)
+        # train_loaders, val_loader, test_loader = split_dataset(dataset, args.pd_nuser, args.partition_mode, args)
+        train_splits = split_dataset(dataset, args.pd_nuser, args.partition_mode)
         
         # # Prepare Data
         # num_classes = 10
@@ -94,12 +95,12 @@ class _Federation:
         # )
         # clients = [c + ' ' + ('noised' if hasattr(args, 'adv_lmbd') and args.adv_lmbd > 0.
         #                       else 'clean') for c in clients]
-
-        self.train_loaders = train_loaders
+        self.dataset = dataset
+        self.train_splits = train_splits
         # self.val_loaders = val_loaders
-        self.val_loader = val_loader
+        # self.val_loader = val_loader
         # self.test_loaders = test_loaders
-        self.test_loader = test_loader
+        # self.test_loader = test_loader
         # self.clients = clients
         self.num_classes = num_classes
         self.n_channels = medmnist_class.medmnist_n_channels[data]
@@ -108,7 +109,7 @@ class _Federation:
         # Setup fed
         # self.client_num = len(self.clients)
         self.client_num = args.pd_nuser
-        client_weights = [len(tl.dataset) for tl in train_loaders]
+        client_weights = [len(train_split) for train_split in train_splits]
         self.client_weights = [w / sum(client_weights) for w in client_weights]
 
         pr_nuser = args.pr_nuser if args.pr_nuser > 0 else self.client_num
@@ -117,7 +118,7 @@ class _Federation:
 
     def get_data(self):
         # return self.train_loaders, self.val_loaders, self.test_loaders
-        return self.train_loaders, self.val_loader, self.test_loader
+        return self.train_splits,  self.dataset
 
     def make_aggregator(self, running_model):
         self._model_accum = ModelAccumulator(running_model, self.args.pr_nuser, self.client_num)
