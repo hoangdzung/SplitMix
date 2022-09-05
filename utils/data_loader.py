@@ -338,7 +338,7 @@ def prepare_cifar_data(args, domains=['cifar10'], shuffle_eval=False, n_class_pe
         partition_seed=partition_seed, n_user_per_domain=n_user_per_domain,
         partition_mode=partition_mode,
         val_ratio=val_ratio, eq_domain_train_size=eq_domain_train_size, percent=args.percent,
-        min_n_sample_per_share=64 if n_class_per_user > 3 else 16, subset_with_logits=subset_with_logits,
+        min_n_sample_per_share=0, subset_with_logits=subset_with_logits,
         n_class_per_user=n_class_per_user,
         test_batch_size=args.test_batch if hasattr(args, 'test_batch') else args.batch,
         consistent_test_class=consistent_test_class,

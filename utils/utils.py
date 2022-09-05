@@ -5,6 +5,143 @@ from collections import Counter
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torchvision import transforms
+from torch.utils.data import Dataset
+from . import medmnist_class
+import os 
+
+def make_data_loader(dataset, batch_size):
+    return torch.utils.data.DataLoader(dataset=dataset, shuffle=True, batch_size=batch_size, pin_memory=True)
+
+
+class SplitDataset(Dataset):
+    def __init__(self, dataset, idx):
+        super().__init__()
+        self.dataset = dataset
+        self.idx = idx
+
+    def __len__(self):
+        return len(self.idx)
+
+    def __getitem__(self, index):
+        input = self.dataset[self.idx[index]]
+        return input
+
+def fetch_dataset(data_name):
+    dataset = {}
+    print('fetching data {}...'.format(data_name))
+    root = './data/{}'.format(data_name)
+    if not os.path.isdir(root):
+        os.makedirs(root)
+    if data_name in medmnist_class.medmnist_classes :
+        dataset['train'] = medmnist_class.medmnist_classes[data_name](root=root, split='train', download=True, transform=transforms.Compose(
+            [transforms.ToTensor(),
+             transforms.Normalize(mean=[.5], std=[.5])]))
+        dataset['train'].target = dataset['train'].labels.squeeze().tolist()
+
+        dataset['val'] = medmnist_class.medmnist_classes[data_name](root=root, split='train', download=True, transform=transforms.Compose(
+            [transforms.ToTensor(),
+             transforms.Normalize(mean=[.5], std=[.5])]))
+        dataset['val'].target = dataset['val'].labels.squeeze().tolist()
+
+        dataset['test'] = medmnist_class.medmnist_classes[data_name](root=root, split='test', download=True, transform=transforms.Compose(
+            [transforms.ToTensor(),
+             transforms.Normalize(mean=[.5], std=[.5])]))
+        dataset['test'].target = dataset['test'].labels.squeeze().tolist()
+
+    else:
+        raise ValueError('Not valid dataset name')
+    return dataset
+
+def split_dataset(dataset, num_users, data_split_mode, args):
+    if data_split_mode == 'iid':
+        data_splits = iid(dataset['train'], num_users)
+    elif 'non-iid' in data_split_mode:
+        data_splits = non_iid(dataset['train'], num_users, data_split_mode)
+    else:
+        raise ValueError('Not valid data split mode')
+    dataloaders = [make_data_loader(SplitDataset(dataset['train'], data_split), args.batch) for data_split in data_splits]
+    return dataloaders, make_data_loader(dataset['val'], args.test_batch), make_data_loader(dataset['test'], args.test_batch)
+
+
+def iid(dataset, num_users):
+    label = torch.tensor(dataset.target)
+
+    d_idxs = np.random.permutation(len(dataset))
+    local_datas = np.array_split(d_idxs, num_users)
+    data_split = []
+
+    for i in range(num_users):
+        data_split.append(local_datas[i])
+
+    return data_split
+
+
+def non_iid(dataset, num_users, data_split_mode):
+    label = np.array(dataset.target)
+    skew = float(data_split_mode.split('-')[-1])
+
+    K = len(set(label))
+    dpairs = [[did, dataset[did][1]] for did in range(len(dataset))]
+
+    MIN_ALPHA = 0.01
+    alpha = (-4*np.log(skew + 10e-8))**4
+    alpha = max(alpha, MIN_ALPHA)
+    labels = [pair[-1] for pair in dpairs]
+    lb_counter = Counter(labels)
+    p = np.array([1.0*v/len(dpairs) for v in lb_counter.values()])
+    lb_dict = {}
+    labels = np.array(labels)
+    for lb in range(len(lb_counter.keys())):
+        lb_dict[lb] = np.where(labels==lb)[0]
+    proportions = [np.random.dirichlet(alpha*p) for _ in range(num_users)]
+    while np.any(np.isnan(proportions)):
+        proportions = [np.random.dirichlet(alpha * p) for _ in range(num_users)]
+    while True:
+        # generate dirichlet distribution till ||E(proportion) - P(D)||<=1e-5*self.num_classes
+        mean_prop = np.mean(proportions, axis=0)
+        error_norm = ((mean_prop-p)**2).sum()
+        print("Error: {:.8f}".format(error_norm))
+        if error_norm<=1e-2/K:
+            break
+        exclude_norms = []
+        for cid in range(num_users):
+            mean_excid = (mean_prop*num_users-proportions[cid])/(num_users-1)
+            error_excid = ((mean_excid-p)**2).sum()
+            exclude_norms.append(error_excid)
+        excid = np.argmin(exclude_norms)
+        sup_prop = [np.random.dirichlet(alpha*p) for _ in range(num_users)]
+        alter_norms = []
+        for cid in range(num_users):
+            if np.any(np.isnan(sup_prop[cid])):
+                continue
+            mean_alter_cid = mean_prop - proportions[excid]/num_users + sup_prop[cid]/num_users
+            error_alter = ((mean_alter_cid-p)**2).sum()
+            alter_norms.append(error_alter)
+        if len(alter_norms)>0:
+            alcid = np.argmin(alter_norms)
+            proportions[excid] = sup_prop[alcid]
+    local_datas = [[] for _ in range(num_users)]
+    # self.dirichlet_dist = [] # for efficiently visualizing
+    for lb in lb_counter.keys():
+        lb_idxs = lb_dict[lb]
+        lb_proportion = np.array([pi[lb] for pi in proportions])
+        lb_proportion = lb_proportion/lb_proportion.sum()
+        lb_proportion = (np.cumsum(lb_proportion) * len(lb_idxs)).astype(int)[:-1]
+        lb_datas = np.split(lb_idxs, lb_proportion)
+        # self.dirichlet_dist.append([len(lb_data) for lb_data in lb_datas])
+        local_datas = [local_data+lb_data.tolist() for local_data,lb_data in zip(local_datas, lb_datas)]
+    # self.dirichlet_dist = np.array(self.dirichlet_dist).T
+    for i in range(num_users):
+        np.random.shuffle(local_datas[i])        
+
+    data_split = []
+
+    for i in range(num_users):
+        data_split.append(local_datas[i])
+
+    return data_split
+
 
 
 def str2bool(v):

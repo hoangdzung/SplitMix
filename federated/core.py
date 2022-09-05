@@ -8,8 +8,8 @@ from torch import nn
 
 from federated.aggregation import ModelAccumulator, SlimmableModelAccumulator
 from nets.slimmable_models import get_slim_ratios_from_str, parse_lognorm_slim_schedule
-from utils.utils import shuffle_sampler, str2bool
-
+from utils.utils import shuffle_sampler, str2bool, fetch_dataset, split_dataset
+from utils import medmnist_class 
 
 class _Federation:
     """A helper class for federated data creation.
@@ -20,21 +20,21 @@ class _Federation:
     @classmethod
     def add_argument(cls, parser: argparse.ArgumentParser):
         # data
-        parser.add_argument('--percent', type=float, default=0.3,
+        parser.add_argument('--percent', type=float, default=0.8,
                             help='percentage of dataset for training')
-        parser.add_argument('--val_ratio', type=float, default=0.5,
+        parser.add_argument('--val_ratio', type=float, default=0.2,
                             help='ratio of train set for validation')
-        parser.add_argument('--batch', type=int, default=32, help='batch size')
+        parser.add_argument('--batch', type=int, default=4, help='batch size')
         parser.add_argument('--test_batch', type=int, default=128, help='batch size for test')
 
         # federated
-        parser.add_argument('--pd_nuser', type=int, default=10, help='#users per domain.')
-        parser.add_argument('--pr_nuser', type=int, default=-1, help='#users per comm round '
+        parser.add_argument('--pd_nuser', type=int, default=100, help='#users per domain.')
+        parser.add_argument('--pr_nuser', type=int, default=10, help='#users per comm round '
                                                                      '[default: all]')
-        parser.add_argument('--pu_nclass', type=int, default=-1, help='#class per user. -1 or 0: all')
+        parser.add_argument('--pu_nclass', type=int, default=10, help='#class per user. -1 or 0: all')
         parser.add_argument('--domain_order', choices=list(range(5)), type=int, default=0,
                             help='select the order of domains')
-        parser.add_argument('--partition_mode', choices=['uni', 'dir'], type=str.lower, default='uni',
+        parser.add_argument('--partition_mode', type=str.lower, default='non-iid-0.25',
                             help='the mode when splitting domain data into users: uni - uniform '
                                  'distribution (all user have the same #samples); dir - Dirichlet'
                                  ' distribution (non-iid sample sizes)')
@@ -57,49 +57,57 @@ class _Federation:
     def __init__(self, data, args):
         self.args = args
 
-        # Prepare Data
-        num_classes = 10
-        if data == 'Digits':
-            from utils.data_utils import DigitsDataset
-            from utils.data_loader import prepare_digits_data
-            prepare_data = prepare_digits_data
-            DataClass = DigitsDataset
-        elif data == 'DomainNet':
-            from utils.data_utils import DomainNetDataset
-            from utils.data_loader import prepare_domainnet_data
-            prepare_data = prepare_domainnet_data
-            DataClass = DomainNetDataset
-        elif data == 'Cifar10':
-            from utils.data_utils import CifarDataset
-            from utils.data_loader import prepare_cifar_data
-            prepare_data = prepare_cifar_data
-            DataClass = CifarDataset
-        else:
-            raise ValueError(f"Unknown dataset: {data}")
-        all_domains = DataClass.resorted_domains[args.domain_order]
+        dataset = fetch_dataset(data)
+        num_classes = medmnist_class.medmnist_n_classes[data]
+        train_loaders, val_loader, test_loader = split_dataset(dataset, args.pd_nuser, args.partition_mode, args)
+        
+        # # Prepare Data
+        # num_classes = 10
+        # if data == 'Digits':
+        #     from utils.data_utils import DigitsDataset
+        #     from utils.data_loader import prepare_digits_data
+        #     prepare_data = prepare_digits_data
+        #     DataClass = DigitsDataset
+        # elif data == 'DomainNet':
+        #     from utils.data_utils import DomainNetDataset
+        #     from utils.data_loader import prepare_domainnet_data
+        #     prepare_data = prepare_domainnet_data
+        #     DataClass = DomainNetDataset
+        # elif data == 'Cifar10':
+        #     from utils.data_utils import CifarDataset
+        #     from utils.data_loader import prepare_cifar_data
+        #     prepare_data = prepare_cifar_data
+        #     DataClass = CifarDataset
+        # else:
+        #     raise ValueError(f"Unknown dataset: {data}")
+        # all_domains = DataClass.resorted_domains[args.domain_order]
 
-        train_loaders, val_loaders, test_loaders, clients = prepare_data(
-            args, domains=all_domains,
-            n_user_per_domain=args.pd_nuser,
-            n_class_per_user=args.pu_nclass,
-            partition_seed=args.seed + 1,
-            partition_mode=args.partition_mode,
-            val_ratio=args.val_ratio,
-            eq_domain_train_size=args.partition_mode == 'uni',
-            consistent_test_class=args.con_test_cls,
-        )
-        clients = [c + ' ' + ('noised' if hasattr(args, 'adv_lmbd') and args.adv_lmbd > 0.
-                              else 'clean') for c in clients]
+        # train_loaders, val_loaders, test_loaders, clients = prepare_data(
+        #     args, domains=all_domains,
+        #     n_user_per_domain=args.pd_nuser,
+        #     n_class_per_user=args.pu_nclass,
+        #     partition_seed=args.seed + 1,
+        #     partition_mode=args.partition_mode,
+        #     val_ratio=args.val_ratio,
+        #     eq_domain_train_size=args.partition_mode == 'uni',
+        #     consistent_test_class=args.con_test_cls,
+        # )
+        # clients = [c + ' ' + ('noised' if hasattr(args, 'adv_lmbd') and args.adv_lmbd > 0.
+        #                       else 'clean') for c in clients]
 
         self.train_loaders = train_loaders
-        self.val_loaders = val_loaders
-        self.test_loaders = test_loaders
-        self.clients = clients
+        # self.val_loaders = val_loaders
+        self.val_loader = val_loader
+        # self.test_loaders = test_loaders
+        self.test_loader = test_loader
+        # self.clients = clients
         self.num_classes = num_classes
-        self.all_domains = all_domains
+        self.n_channels = medmnist_class.medmnist_n_channels[data]
+        # self.all_domains = all_domains
 
         # Setup fed
-        self.client_num = len(self.clients)
+        # self.client_num = len(self.clients)
+        self.client_num = args.pd_nuser
         client_weights = [len(tl.dataset) for tl in train_loaders]
         self.client_weights = [w / sum(client_weights) for w in client_weights]
 
@@ -108,7 +116,8 @@ class _Federation:
         self.client_sampler = UserSampler([i for i in range(self.client_num)], pr_nuser, mode='uni')
 
     def get_data(self):
-        return self.train_loaders, self.val_loaders, self.test_loaders
+        # return self.train_loaders, self.val_loaders, self.test_loaders
+        return self.train_loaders, self.val_loader, self.test_loader
 
     def make_aggregator(self, running_model):
         self._model_accum = ModelAccumulator(running_model, self.args.pr_nuser, self.client_num)
@@ -138,9 +147,9 @@ class HeteFederation(_Federation):
     @classmethod
     def add_argument(cls, parser: argparse.ArgumentParser):
         super(HeteFederation, cls).add_argument(parser)
-        parser.add_argument('--slim_ratios', type=str, default='8-4-2-1',
-                            help='define the slim_ratio for groups, for example, 8-4-2-1 [default]'
-                                 ' means x1/8 net for the 1st group, and x1/4 for the 2nd')
+        parser.add_argument('--slim_ratios', type=str, default='32-8-1',
+                            help='define the slim_ratio for groups, for example, 32-8-1 [default]'
+                                 ' means x1/32 net for the 1st group, and x1/8 for the 2nd')
         parser.add_argument('--val_ens_only', action='store_true',
                             help='only validate the full-size model')
 
@@ -178,7 +187,7 @@ class HeteFederation(_Federation):
             return parse_lognorm_slim_schedule(train_slim_ratios, mode, self.client_num)
         else:
             return [train_slim_ratios[int(len(train_slim_ratios) * i / self.client_num)]
-                    for i, cname in enumerate(self.clients)]
+                    for i in range(self.client_num)]
 
     def make_aggregator(self, running_model, local_bn=False):
         self._model_accum = SlimmableModelAccumulator(running_model, self.args.pr_nuser,
@@ -240,7 +249,7 @@ class SplitFederation(HeteFederation):
     @classmethod
     def add_argument(cls, parser: argparse.ArgumentParser):
         super(SplitFederation, cls).add_argument(parser)
-        parser.add_argument('--atom_slim_ratio', type=float, default=0.125,
+        parser.add_argument('--atom_slim_ratio', type=float, default=0.03125,
                             help='the width ratio of a base model')
 
     @classmethod
@@ -273,8 +282,8 @@ class SplitFederation(HeteFederation):
             _sampler = shuffle_sampler([v for v in self.user_base_sampler.arr if v != slim_shifts[0]])
             slim_shifts += [_sampler.next() for _ in range(user_n_base - 1)]
         slim_ratios = [self.args.atom_slim_ratio] * user_n_base
-        print(f" max slim ratio: {max_slim_ratio} "
-              f"slim_ratios={slim_ratios}, slim_shifts={slim_shifts}")
+        # print(f" max slim ratio: {max_slim_ratio} "
+        #       f"slim_ratios={slim_ratios}, slim_shifts={slim_shifts}")
         return slim_ratios, slim_shifts
 
 

@@ -115,9 +115,9 @@ class ModelAccumulator(object):
     def load_model(self, running_model: nn.Module, model_idx: int, strict=True):
         """Load server model and local BN states into the given running_model."""
         state_dict = {k: v for k, v in self.server_state_dict.items()}
-        if len(self.local_state_dict) > 0:
-            for k in self.local_state_dict[model_idx]:
-                state_dict[k] = self.local_state_dict[model_idx][k]
+        # if len(self.local_state_dict) > 0:
+        #     for k in self.local_state_dict[model_idx]:
+        #         state_dict[k] = self.local_state_dict[model_idx][k]
         running_model.load_state_dict(state_dict, strict=strict)
 
     def update_server_and_reset(self):
