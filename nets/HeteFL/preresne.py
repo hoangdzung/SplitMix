@@ -147,7 +147,7 @@ class ResNet12(ScalableModule):
                                      rescale_layer=rescale_layer)
 
         if width_scale != 1.:
-            hidden_size = [int(hs * width_scale) for hs in hidden_size]
+            hidden_size = [int(np.ceil(hs * width_scale)) for hs in hidden_size]
         self.bn_type = bn_type
         # norm_layer = lambda n_ch: get_bn_layer(bn_type)['2d'](n_ch, track_running_stats=track_running_stats)
         if bn_type == 'bn':
