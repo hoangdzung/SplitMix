@@ -53,16 +53,16 @@ def fetch_dataset(data_name):
         raise ValueError('Not valid dataset name')
     return dataset
 
-def split_dataset(dataset, num_users, data_split_mode, args):
+def split_dataset(dataset, num_users, data_split_mode):
     if data_split_mode == 'iid':
         data_splits = iid(dataset['train'], num_users)
     elif 'non-iid' in data_split_mode:
         data_splits = non_iid(dataset['train'], num_users, data_split_mode)
     else:
         raise ValueError('Not valid data split mode')
-    dataloaders = [make_data_loader(SplitDataset(dataset['train'], data_split), args.batch) for data_split in data_splits]
-    return dataloaders, make_data_loader(dataset['val'], args.test_batch,False), make_data_loader(dataset['test'], args.test_batch, False)
-
+    # dataloaders = [make_data_loader(SplitDataset(dataset['train'], data_split), args.batch) for data_split in data_splits]
+    # return dataloaders, make_data_loader(dataset['val'], args.test_batch), make_data_loader(dataset['test'], args.test_batch)
+    return data_splits
 
 def iid(dataset, num_users):
     label = torch.tensor(dataset.target)

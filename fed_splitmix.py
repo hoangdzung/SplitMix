@@ -219,8 +219,10 @@ if __name__ == '__main__':
     # /////////////////////////////////
     fed = Federation(args.data, args)
     # Data
-    train_loaders, val_loader, test_loader = fed.get_data()
-    mean_batch_iters = int(np.mean([len(tl) for tl in train_loaders]))
+    train_splits, dataset = fed.get_data()
+    val_loader = make_data_loader(dataset['val'], args.test_batch, False)
+    test_loader = make_data_loader(dataset['test'], args.test_batch, False)
+    mean_batch_iters = int(np.mean([len(tl) for tl in train_splits]))
     print(f"  mean_batch_iters: {mean_batch_iters}")
 
     # Model
@@ -408,9 +410,9 @@ if __name__ == '__main__':
             else:
                 raise ValueError(f"Invalid optimizer: {args.opt}")
             local_iters = mean_batch_iters * args.wk_iters if args.partition_mode != 'uni' \
-                else len(train_loaders[client_idx]) * args.wk_iters
+                else len(train_splits[client_idx]) * args.wk_iters
             train_loss, train_acc = train_slimmable(
-                running_model, train_loaders[client_idx], optimizer, loss_fun, device,
+                running_model, make_data_loader(SplitDataset(dataset['train'], train_splits[client_idx]), args.batch, True), optimizer, loss_fun, device,
                 max_iter=local_iters,
                 slim_ratios=slim_ratios, slim_shifts=slim_shifts, progress=args.verbose > 0,
                 loss_temp=args.loss_temp,
