@@ -223,7 +223,7 @@ if __name__ == '__main__':
     train_loaders = [make_data_loader(SplitDataset(dataset['train'], data_split), args.batch) for data_split in train_splits]
     val_loader = make_data_loader(dataset['val'], args.test_batch, False)
     test_loader = make_data_loader(dataset['test'], args.test_batch, False)
-    mean_batch_iters = int(np.mean([len(tl) for tl in train_splits]))
+    mean_batch_iters = int(np.mean([len(tl) for tl in train_loaders]))
     print(f"  mean_batch_iters: {mean_batch_iters}")
 
     # Model
@@ -394,7 +394,7 @@ if __name__ == '__main__':
 
         # ----------- Train Client ---------------
         print("============ Train epoch {} ============".format(a_iter))
-        start_time = time.process_time()
+        start_time = time.time()
         for client_idx in tqdm(fed.client_sampler.iter(), desc="Epoch "+str(a_iter)):
             # (Alg 2) Sample base models defined by shift index.
             slim_ratios, slim_shifts = fed.sample_bases(client_idx)
@@ -469,7 +469,7 @@ if __name__ == '__main__':
         log['test_accs'].append(best_test_acc)
 
         print(val_loss, val_acc, best_test_acc)
-        elapsed = time.process_time() - start_time
+        elapsed = time.time() - start_time
         print('train_elapsed', elapsed)
     with open(os.path.join(save_dir, 'log.json'), 'w') as f:
         json.dump(log, f)
