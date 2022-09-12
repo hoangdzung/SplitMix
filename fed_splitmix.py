@@ -15,7 +15,8 @@ from nets.slimmable_models import EnsembleNet, EnsembleSubnet
 from utils.utils import set_seed, AverageMeter, CosineAnnealingLR, \
     MultiStepLR, LocalMaskCrossEntropyLoss, str2bool
 from utils.config import CHECKPOINT_ROOT
-
+from utils.utils import make_data_loader, SplitDataset 
+from tqdm import tqdm
 # NOTE import desired federation
 from federated.core import SplitFederation as Federation, AdversaryCreator
 
@@ -23,7 +24,7 @@ from federated.core import SplitFederation as Federation, AdversaryCreator
 def render_run_name(args, exp_folder):
     """Return a unique run_name from given args."""
     args.model = 'resnet12' 
-    run_name = f'{args.model}'
+    run_name = f'{args.model}_bdim{args.base_dim}'
     run_name += Federation.render_run_name(args)
     # log non-default args
     if args.seed != 1: run_name += f'__seed_{args.seed}'
@@ -50,7 +51,7 @@ def render_run_name(args, exp_folder):
     return run_name, SAVE_FILE
 
 
-def get_model_fh(data, model, atom_slim_ratio, n_channels=1):
+def get_model_fh(data, model, atom_slim_ratio, n_channels=1, base_dim=32):
     # # FIXME Only use EnsembleNet or Slimmable model.
     # if data == 'Digits':
     #     if model in ['digit']:
@@ -95,19 +96,19 @@ def get_model_fh(data, model, atom_slim_ratio, n_channels=1):
 
     if args.no_track_stat:
         # FIXME remove on release
-        from nets.HeteFL.preresne import resnet12_1, resnet12_3
+        from nets.HeteFL.preresne import resnet12
     else:
-        from nets.HeteFL.preresnet import resnet12_1, resnet12_3
-    if n_channels==1:
-        ModelClass = lambda **kwargs: EnsembleNet(
-            base_net=resnet12_1, atom_slim_ratio=atom_slim_ratio,
-            rescale_init=args.rescale_init, rescale_layer=args.rescale_layer, **kwargs)
-    elif n_channels==3:
-        ModelClass = lambda **kwargs: EnsembleNet(
-            base_net=resnet12_3, atom_slim_ratio=atom_slim_ratio,
-            rescale_init=args.rescale_init, rescale_layer=args.rescale_layer, **kwargs)    
-    else:
-        raise ValueError()    
+        from nets.HeteFL.preresnet import resnet12
+    # if n_channels==1:
+    ModelClass = lambda **kwargs: EnsembleNet(
+        base_net=resnet12, atom_slim_ratio=atom_slim_ratio,
+        rescale_init=args.rescale_init, rescale_layer=args.rescale_layer, n_channels=n_channels, base_dim=base_dim, **kwargs)
+    # elif n_channels==3:
+    #     ModelClass = lambda **kwargs: EnsembleNet(
+    #         base_net=resnet12_3, atom_slim_ratio=atom_slim_ratio,
+    #         rescale_init=args.rescale_init, rescale_layer=args.rescale_layer, **kwargs)    
+    # else:
+    #     raise ValueError()    
     return ModelClass
 
 
@@ -168,6 +169,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=1, help='random seed')
     parser.add_argument('--data', type=str, default='Digits', help='data name')
     parser.add_argument('--model', type=str.lower, default='default', help='model name')
+    parser.add_argument('--base_dim', type=int, default=32, help='dimemsion of the first layer')
     parser.add_argument('--no_track_stat', action='store_true', help='disable BN tracking')
     parser.add_argument('--test_refresh_bn', action='store_true', help='refresh BN before test')
     # control
@@ -222,7 +224,7 @@ if __name__ == '__main__':
     print(f"  mean_batch_iters: {mean_batch_iters}")
 
     # Model
-    ModelClass = get_model_fh(args.data, args.model, args.atom_slim_ratio, fed.n_channels)
+    ModelClass = get_model_fh(args.data, args.model, args.atom_slim_ratio, n_channels= fed.n_channels, base_dim=args.base_dim)
     running_model = ModelClass(
         track_running_stats=not args.no_track_stat or (args.test and args.test_refresh_bn), num_classes=fed.num_classes,
         bn_type='dbn' if 0. < args.adv_lmbd < 1. else 'bn',
@@ -390,7 +392,7 @@ if __name__ == '__main__':
         # ----------- Train Client ---------------
         print("============ Train epoch {} ============".format(a_iter))
         start_time = time.process_time()
-        for client_idx in fed.client_sampler.iter():
+        for client_idx in tqdm(fed.client_sampler.iter(), desc="Epoch "+str(a_iter)):
             # (Alg 2) Sample base models defined by shift index.
             slim_ratios, slim_shifts = fed.sample_bases(client_idx)
 

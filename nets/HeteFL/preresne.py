@@ -142,7 +142,7 @@ class ResNet12(ScalableModule):
 
     def __init__(self, hidden_size, block, num_blocks, num_classes=10, n_channels=1, bn_type='bn',
                  share_affine=False, track_running_stats=True, width_scale=1.,
-                 rescale_init=False, rescale_layer=False):
+                 rescale_init=False, rescale_layer=False, **kwargs):
         super(ResNet12, self).__init__(width_scale=width_scale, rescale_init=rescale_init,
                                      rescale_layer=rescale_layer)
 
@@ -214,13 +214,8 @@ def resnet10(**kwargs):
     model.apply(init_param)
     return model
 
-def resnet12_1(**kwargs):
-    model = ResNet12(hidden_size, Block, [1, 2, 2], n_channels=1, **kwargs)
-    model.apply(init_param)
-    return model
-
-def resnet12_3(**kwargs):
-    model = ResNet12(hidden_size, Block, [1, 2, 2], n_channels=3, **kwargs)
+def resnet12(**kwargs):
+    model = ResNet12([2**i * kwargs['base_dim'] for i in range(3)], Block, [1, 2, 2], **kwargs)
     model.apply(init_param)
     return model
 

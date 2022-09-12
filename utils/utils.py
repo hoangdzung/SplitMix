@@ -10,8 +10,8 @@ from torch.utils.data import Dataset
 from . import medmnist_class
 import os 
 
-def make_data_loader(dataset, batch_size):
-    return torch.utils.data.DataLoader(dataset=dataset, shuffle=True, batch_size=batch_size, pin_memory=True)
+def make_data_loader(dataset, batch_size=4, shuffle=True):
+    return torch.utils.data.DataLoader(dataset=dataset, shuffle=shuffle, batch_size=batch_size, pin_memory=True)
 
 
 class SplitDataset(Dataset):
@@ -61,7 +61,7 @@ def split_dataset(dataset, num_users, data_split_mode, args):
     else:
         raise ValueError('Not valid data split mode')
     dataloaders = [make_data_loader(SplitDataset(dataset['train'], data_split), args.batch) for data_split in data_splits]
-    return dataloaders, make_data_loader(dataset['val'], args.test_batch), make_data_loader(dataset['test'], args.test_batch)
+    return dataloaders, make_data_loader(dataset['val'], args.test_batch,False), make_data_loader(dataset['test'], args.test_batch, False)
 
 
 def iid(dataset, num_users):
